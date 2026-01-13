@@ -1,0 +1,43 @@
+import os
+import boto3
+import json
+
+s3 = boto3.client('s3')
+OUTPUT_BUCKET = os.environ['OUTPUT_BUCKET']
+EXPIRES = int(os.environ.get('PRESIGN_EXPIRES', '900'))
+
+def lambda_handler(event, context):
+    prefixes = ['large/', 'medium/', 'small/']
+    resp = {}
+
+    for p in prefixes:
+        items = s3.list_objects_v2(
+            Bucket=OUTPUT_BUCKET,
+            Prefix=p,
+            MaxKeys=100
+        )
+        files = []
+
+        for obj in items.get('Contents', []):
+            key = obj['Key']
+            presign = s3.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': OUTPUT_BUCKET, 'Key': key},
+                ExpiresIn=EXPIRES
+            )
+            files.append({
+                'key': key,
+                'url': presign,
+                'size': obj['Size']
+            })
+
+        resp[p.rstrip('/')] = files
+
+    return {
+        'statusCode': 200,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': json.dumps(resp)
+    }
